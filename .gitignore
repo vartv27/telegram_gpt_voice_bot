@@ -1,0 +1,31 @@
+# Исполняемые файлы
+telegram-bot
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Тестовые файлы
+*.test
+*.out
+
+# Go workspace file
+go.work
+
+# Переменные окружения
+.env
+.env.local
+
+# База данных
+*.db
+*.db-journal
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
