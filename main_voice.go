@@ -639,7 +639,11 @@ func main() {
 
 		// Проверяем лимит запросов (кроме команд /start и /help)
 		if !update.Message.IsCommand() || (update.Message.IsCommand() && update.Message.Command() != "start" && update.Message.Command() != "help") {
+			// Получаем username, если нет - используем FirstName
 			username := update.Message.From.UserName
+			if username == "" {
+				username = update.Message.From.FirstName
+			}
 			userID := update.Message.From.ID
 
 			// Проверяем лимит
@@ -659,7 +663,11 @@ func main() {
 
 		// Обработка голосовых сообщений
 		if update.Message.Voice != nil {
-			log.Printf("🎤 [%s] Получено голосовое сообщение", update.Message.From.UserName)
+			username := update.Message.From.UserName
+			if username == "" {
+				username = update.Message.From.FirstName
+			}
+			log.Printf("🎤 [%s] Получено голосовое сообщение", username)
 
 			// Отправляем уведомление
 			statusMsg := tgbotapi.NewMessage(update.Message.Chat.ID, "🎧 Распознаю голос...")
@@ -848,9 +856,13 @@ func main() {
 				log.Printf("Ошибка отправки голоса: %v", err)
 			} else {
 				// Сохраняем в БД только при успешной отправке
+				username := update.Message.From.UserName
+				if username == "" {
+					username = update.Message.From.FirstName
+				}
 				saveMessage(
 					update.Message.From.ID,
-					update.Message.From.UserName,
+					username,
 					"voice",
 					recognizedText,
 					"voice",
@@ -952,8 +964,12 @@ func main() {
 			}
 		} else if update.Message.Text != "" {
 			// Обычные текстовые сообщения
+			username := update.Message.From.UserName
+			if username == "" {
+				username = update.Message.From.FirstName
+			}
 			userText := update.Message.Text
-			log.Printf("[%s] %s", update.Message.From.UserName, userText)
+			log.Printf("[%s] %s", username, userText)
 
 			var gptResponse string
 
@@ -1093,9 +1109,13 @@ func main() {
 				log.Printf("Ошибка отправки голоса: %v", err)
 			} else {
 				// Сохраняем в БД только при успешной отправке
+				username := update.Message.From.UserName
+				if username == "" {
+					username = update.Message.From.FirstName
+				}
 				saveMessage(
 					update.Message.From.ID,
-					update.Message.From.UserName,
+					username,
 					"text",
 					userText,
 					"voice",
