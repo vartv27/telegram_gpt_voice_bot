@@ -1,0 +1,10 @@
+.git
+.gitignore
+.env
+.env.example
+README.md
+README_DB.md
+README_VOICE.md
+*.db
+telegram-bot
+.DS_Store

@@ -1,0 +1,14 @@
+services:
+  - type: pserv
+    name: telegram-gpt-voice-bot
+    env: docker
+    plan: free
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
