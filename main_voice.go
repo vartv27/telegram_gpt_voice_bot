@@ -63,8 +63,24 @@ func initDB() error {
 		return fmt.Errorf("ошибка создания таблицы thoughts: %v", err)
 	}
 
+	// Создаем таблицу лимитов пользователей
+	createUserLimitsTableSQL := `
+	CREATE TABLE IF NOT EXISTS user_limits (
+		user_id INTEGER PRIMARY KEY,
+		username TEXT,
+		date DATE DEFAULT (date('now')),
+		request_count INTEGER DEFAULT 0
+	);
+	`
+
+	_, err = db.Exec(createUserLimitsTableSQL)
+	if err != nil {
+		return fmt.Errorf("ошибка создания таблицы user_limits: %v", err)
+	}
+
 	log.Printf("💾 База данных подключена: %s", DB_FILE)
 	log.Printf("✅ Таблица 'thoughts' готова к работе")
+	log.Printf("✅ Таблица 'user_limits' готова к работе")
 	return nil
 }
 
@@ -95,6 +111,92 @@ func saveThought(thoughtText, category string) error {
 		return fmt.Errorf("ошибка записи мысли в БД: %v", err)
 	}
 	log.Printf("💭 Мысль сохранена в БД: category=%s", category)
+	return nil
+}
+
+// checkUserLimit проверяет, не превышен ли дневной лимит пользователя
+// Возвращает true если лимит превышен
+func checkUserLimit(userID int64, username string) bool {
+	// Владелец бота не имеет лимитов
+	if username == "roman8890" {
+		return false
+	}
+
+	const dailyLimit = 2
+
+	// Получаем счетчик запросов за сегодня
+	var requestCount int
+	var lastDate string
+
+	query := `SELECT request_count, date FROM user_limits WHERE user_id = ?`
+	err := db.QueryRow(query, userID).Scan(&requestCount, &lastDate)
+
+	if err == sql.ErrNoRows {
+		// Новый пользователь - создаем запись
+		insertSQL := `INSERT INTO user_limits (user_id, username, date, request_count) VALUES (?, ?, date('now'), 0)`
+		db.Exec(insertSQL, userID, username)
+		return false
+	}
+
+	if err != nil {
+		log.Printf("⚠️ Ошибка проверки лимита: %v", err)
+		return false // В случае ошибки разрешаем запрос
+	}
+
+	// Проверяем, сегодняшний ли день
+	today := strings.Split(lastDate, " ")[0] // Получаем только дату
+	currentDate := "" // Получим из БД
+	db.QueryRow(`SELECT date('now')`).Scan(&currentDate)
+
+	// Если дата изменилась - сбрасываем счетчик
+	if today != currentDate {
+		updateSQL := `UPDATE user_limits SET date = date('now'), request_count = 0 WHERE user_id = ?`
+		db.Exec(updateSQL, userID)
+		return false
+	}
+
+	// Проверяем лимит
+	if requestCount >= dailyLimit {
+		log.Printf("🚫 Пользователь %s (%d) превысил лимит: %d/%d", username, userID, requestCount, dailyLimit)
+		return true
+	}
+
+	return false
+}
+
+// incrementUserUsage увеличивает счетчик использования пользователя
+func incrementUserUsage(userID int64, username string) error {
+	// Владелец бота не имеет лимитов
+	if username == "roman8890" {
+		return nil
+	}
+
+	updateSQL := `
+	UPDATE user_limits
+	SET request_count = request_count + 1
+	WHERE user_id = ? AND date = date('now')
+	`
+
+	result, err := db.Exec(updateSQL, userID)
+	if err != nil {
+		return fmt.Errorf("ошибка увеличения счетчика: %v", err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		// Если записи нет, создаем ее
+		insertSQL := `INSERT INTO user_limits (user_id, username, date, request_count) VALUES (?, ?, date('now'), 1)`
+		_, err = db.Exec(insertSQL, userID, username)
+		if err != nil {
+			return fmt.Errorf("ошибка создания записи лимита: %v", err)
+		}
+	}
+
+	// Получаем текущий счетчик для лога
+	var count int
+	db.QueryRow(`SELECT request_count FROM user_limits WHERE user_id = ?`, userID).Scan(&count)
+	log.Printf("📊 Пользователь %s: запрос %d/2", username, count)
+
 	return nil
 }
 
@@ -533,6 +635,26 @@ func main() {
 	for update := range updates {
 		if update.Message == nil {
 			continue
+		}
+
+		// Проверяем лимит запросов (кроме команд /start и /help)
+		if !update.Message.IsCommand() || (update.Message.IsCommand() && update.Message.Command() != "start" && update.Message.Command() != "help") {
+			username := update.Message.From.UserName
+			userID := update.Message.From.ID
+
+			// Проверяем лимит
+			if checkUserLimit(userID, username) {
+				msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+					"⏳ Вы достигли дневного лимита запросов (2 запроса в день).\n\n"+
+						"Лимит обновляется каждый день в 00:00 UTC.\n"+
+						"Спасибо за понимание! 🙏")
+				bot.Send(msg)
+				log.Printf("🚫 Запрос от %s отклонен - лимит превышен", username)
+				continue
+			}
+
+			// Увеличиваем счетчик использования
+			incrementUserUsage(userID, username)
 		}
 
 		// Обработка голосовых сообщений
